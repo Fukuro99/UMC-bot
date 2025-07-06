@@ -12,6 +12,12 @@ class HealthServer {
     }
     
     start() {
+        // Check if server is already running
+        if (this.server && this.server.listening) {
+            console.log(`🏥 Health server already running on port ${this.port}`);
+            return;
+        }
+        
         this.server = http.createServer((req, res) => {
             // Enable CORS
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -40,7 +46,18 @@ class HealthServer {
             }
         });
         
-        this.server.listen(this.port, () => {
+        this.server.on('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                console.log(`🏥 Port ${this.port} is busy, trying alternative...`);
+                // Try alternative port
+                this.port = this.port + 1;
+                setTimeout(() => this.start(), 1000);
+            } else {
+                console.error('🏥 Health server error:', err);
+            }
+        });
+        
+        this.server.listen(this.port, '0.0.0.0', () => {
             console.log(`🏥 Health server running on port ${this.port}`);
         });
     }

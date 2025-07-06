@@ -67,9 +67,11 @@ async function startBot() {
     
     try {
         // Start health server first (Render requirement)
-        healthServer = new HealthServer();
-        healthServer.start();
-        healthServer.setBotStatus('initializing');
+        if (!healthServer) {
+            healthServer = new HealthServer();
+            healthServer.start();
+            healthServer.setBotStatus('initializing');
+        }
         
         // Validate configuration
         if (!config.username || !config.password) {
