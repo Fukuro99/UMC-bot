@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: umc-bot
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RESONITE_USERNAME
+        sync: false
+      - key: RESONITE_PASSWORD
+        sync: false
+      - key: RESONITE_TOTP
+        sync: false
+      - key: AUTO_ACCEPT_FRIEND_REQUESTS
+        value: "true"
+      - key: AUTO_EXTEND_LOGIN
+        value: "true"
+      - key: UPDATE_STATUS
+        value: "true"
+      - key: READ_MESSAGES_ON_RECEIVE
+        value: "true"
+      - key: VERSION_NAME
+        value: "UMC-bot Production"
+      - key: LOG_LEVEL
+        value: "INFO"
+    region: oregon
+    plan: starter
+    healthCheckPath: /health
+    numInstances: 1

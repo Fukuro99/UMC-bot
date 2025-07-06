@@ -1,139 +1,147 @@
-# mvcontact-bot
+# UMC-bot 🤖
 
-A chat bot module that currently works with Resonite. This allows you to create your own chat bots.
+UMC Bank's official Resonite bot for customer service and community management.
 
-(Currently unfinished. Although most functionality is already implemented.)
-## Usage
-(There are usage examples in the [examples](./examples) folder)
-- Include the module in your code
-  - `npm install github:Lexevolution/mvcontact-bot`
-- Set up your config (explained below)
-- Create a new instance of the `MVContactBot`, with the config as the parameter (you can have multiple bots):
-```js
-let myBot = new MVContactBot(config);
+## Features
+
+- 🔐 Automatic login with environment variable configuration
+- 👥 Auto-accept friend requests
+- 💬 Intelligent message handling and responses
+- 🔄 Auto-reconnection and session management
+- 🏥 Health monitoring for production deployment
+- 📊 Comprehensive logging and monitoring
+
+## Quick Start
+
+### Local Development
+
+1. **Clone and install dependencies:**
+   ```bash
+   git clone https://github.com/Fukuro99/UMC_BalanceDB.git
+   cd UMC-bot
+   npm install
+   ```
+
+2. **Set up environment variables:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Resonite credentials
+   ```
+
+3. **Run the bot:**
+   ```bash
+   npm run dev
+   ```
+
+### Production Deployment (Render)
+
+1. **Set environment variables in Render dashboard:**
+   ```
+   RESONITE_USERNAME=bank@umcapp.org
+   RESONITE_PASSWORD=your_password
+   RESONITE_TOTP=your_totp_token
+   NODE_ENV=production
+   ```
+
+2. **Deploy:**
+   - Connect your GitHub repository to Render
+   - Use the included `render.yaml` configuration
+   - Deploy automatically triggers on git push
+
+## Environment Variables
+
+### Required
+- `RESONITE_USERNAME` - Resonite account username
+- `RESONITE_PASSWORD` - Resonite account password
+
+### Optional
+- `RESONITE_TOTP` - TOTP token if 2FA is enabled
+- `NODE_ENV` - Environment (development/production/test)
+- `AUTO_ACCEPT_FRIEND_REQUESTS` - Auto-accept friend requests (true/false)
+- `VERSION_NAME` - Bot version name displayed in Resonite
+- `LOG_LEVEL` - Logging level (DEBUG/INFO/WARN/ERROR)
+
+## Project Structure
+
 ```
-- Make the bot login and start it up afterwards:
-```js
-async function runBot() {
-    await myBot.login()
-        .catch(err => {console.error(err);}
-    );
+UMC-bot/
+├── app.js              # Main application entry point
+├── index.js            # Bot class implementation
+├── config/             # Environment-based configuration
+│   └── index.js       
+├── health-server.js    # Health check server for Render
+├── logging.js          # Logging utilities
+├── .env.example       # Environment variables template
+├── render.yaml        # Render deployment configuration
+└── package.json       # Dependencies and scripts
+```
 
-    await myBot.start()
-        .catch(err => {console.error(err);}
-    );
+## Scripts
+
+- `npm start` - Start bot in production mode
+- `npm run dev` - Start bot in development mode
+- `npm test` - Start bot in test mode
+- `npm run validate-env` - Validate environment configuration
+
+## Health Monitoring
+
+The bot includes a health check endpoint at `/health` that returns:
+
+```json
+{
+  "status": "ok",
+  "botStatus": "running",
+  "timestamp": "2025-07-06T12:00:00.000Z",
+  "uptime": 3600,
+  "version": "1.0.0",
+  "environment": "production"
 }
-
-runBot();
-```
-- The bot will emit events on messages, so listen to any of these events (explanation for each of these events and the data returned below)
-    - `receiveRawMessage`
-    - `receiveTextMessage`
-    - `receiveSoundMessage`
-    - `receiveObjectMessage`
-    - `receiveSessionInviteMessage`
-```js
-myBot.on('receiveTextMessage', (sendingUser, message) => {
-    ...
-});
-```
-- You can also send messages (further explained below)
-    - `sendRawMessage(messageData)`
-    - `sendTextMessage(user, message)`
-
-## Config Schema
-The config used for the constructor of the `MVContactBot` is an object and has a few parameters, many of which are optional and have defaults:
-- `username` (required, string): The Resonite account username that the bot will use.
-- `password` (required, string): The Resonite account password that the bot will use.
-- `TOTP` (optional, string): If the Resonite account has TOTP enabled for login, supply the 6 digit code here.
-- `autoAcceptFriendRequests` (optional, enum as string, default: `"all"`): Can be `"all"`, `"list"` or `"none"`.
-    - `"all"`: The bot will automatically accept all contact requests.
-    - `"list"`: The bot will only accept an incoming contact request if the User ID of that request is in the bot's `data.whitelist` list. This list can only be added to when the bot is created, so you will need another form of storage to keep a non-volatile whitelist.
-    - `"none"`: The bot will do nothing with incoming contact requests.
-- `autoExtendLogin` (optional, bool, default: `true`): If true, will keep extending the login session of the associated Resonite account, so it doesn't automatically logout.
-- `updateStatus` (optional, bool, default: `true`): If true, will make the associated Resonite account show as Online and will display the version name from the `versionName` parameter. If using this bot on the same Resonite account as a Resonite headless client, it is recommended to set this to `false`.
-- `readMessagesOnReceive` (optional, bool, default: `true`): If true, will automatically mark all messages that it receives as read. This is useful to indicate to a user if a bot is receiving their message.
-- `versionName` (optional, string, default: `"Resonite Contact Bot"`): When `updateStatus` is `true`, will display this as the version used. This can be programatically changed on the fly.
-- `logToFile` (optional, bool, default: `true`): Determines whether the log messages from the bot will also output to a file.
-- `logPath` (optional, filepath/directory as string, default: `"."`): The relative or absolute directory or file path that the bot will log to (if `logToFile` is set to true). If it is a directory, the bot will create a named and timestamped log file on each run in that directory. If it is a filename, it will log to that file. The directory/file needs to exist beforehand.
-
-## Sending Messages
-These are the current methods provided to send messages:
-- `sendTextMessage(user, message)`
-    - `user` (string): The Resonite User ID that the message will be sent to.
-    - `message` (string): The text message that will be sent.
-```js
-# Example
-myBot.sendTextMessage("U-Lexevo", "Hello there!");
-```
-- `sendRawMessage(messageData)`
-    - `messageData` (object): A Resonite message object to be sent. More info on the schema of the message object [here](./docs/Message.md).
-
-## Receiving Messages
-These are the details for the events that get emitted when a message is received.
-- `receiveRawMessage`: This event gets emitted on all received messages, even ones that aren't categorised by this bot.
-    - `messageData` (object): A Resonite [message object](./docs/Message.md).
-```js
-myBot.on('receiveRawMessage', (messageData) => {
-    ...
-});
-```
-- `receiveTextMessage`: This event gets emitted when a text message is received.
-    - `senderId` (string): The Resonite user ID of the user who sent the text message.
-    - `content` (string): The text message itself.
-```js
-myBot.on('receiveTextMessage', (senderId, content) => {
-    ...
-});
-```
-- `receiveSoundMessage`: This event gets emitted whenever an audio message is received.
-    - `senderId` (string): The Resonite user ID of the user who sent the audio message.
-    - `audioUrl` (string): The url which points to the audio from the audio message.
-```js
-myBot.on('receiveSoundMessage', (senderId, audioUrl) => {
-    ...
-});
-```
-- `receiveObjectMessage`: This event gets emitted whenever an object/item is received.
-    - `senderId` (string): The Resonite user ID of the user who sent the object.
-    - `name` (string): The name of the object that was sent.
-    - `objectAssetUrl` (string): The url which points to the asset of the object. If you need more info from the object (e.g. tags), use `receiveRawMessage`.
-```js
-myBot.on('receiveObjectMessage', (senderId, name, objectAssetUrl) => {
-    ...
-});
-```
-- `receiveSessionInviteMessage`: This event gets emitted whenever a session invite from a user is received.
-    - `senderId` (string): The Resonite user ID of the user who sent the session invite.
-    - `name` (string): The name of the session associated with the invite.
-    - `sessionId` (string): The ID of the session associated with the invite.
-```js
-myBot.on('receiveSessionInviteMessage', (senderId, name, sessionId) => {
-    ...
-});
 ```
 
-## Other bot functions
-- `removeFriend(friendId)`: Removes a contact off of the list of contacts.
-    - `friendId` (string): The User ID of the contact you want to remove.
+## Bot Commands & Responses
 
-```js
-await myBot.removeFriend("U-Example")
-    .catch((err) => {console.log(`Error removing contact: ${err}`)});
-```
+The bot automatically responds to common greetings and can be extended with custom commands.
 
-- `addFriend(friendId)`: Sends a contact request to a user.
-    - `friendId` (string): The User ID of the user you want to request contact.
+Current auto-responses:
+- "hello" / "hi" → Friendly greeting with UMC Bank introduction
 
-```js
-await myBot.addFriend("U-Example")
-    .catch((err) => {console.log(`Error requesting contact: ${err}`)});
-```
+## Security
 
-- Reacting to adding a contact
-    - `addedContact`: An event that is emitted when the bot successfully accepts a contact, with the User ID of the contact added. This could be used to send a message immediately after 
-```js
-myBot.on('addedContact', (userID) => {
-    ...
-});
-```
+- ✅ Environment variables for sensitive data
+- ✅ Graceful shutdown handling
+- ✅ Error handling and retry logic
+- ✅ Production-ready logging
+- ✅ TOTP support for 2FA
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Login Failed**
+   - Verify RESONITE_USERNAME and RESONITE_PASSWORD
+   - Check if TOTP is required and properly set
+
+2. **Connection Issues**
+   - Bot will automatically retry connections
+   - Check Resonite API status
+
+3. **Environment Variables**
+   - Use `npm run validate-env` to check configuration
+   - Ensure all required variables are set
+
+### Logs
+
+Development logs include detailed information about:
+- Login attempts and status
+- Message received/sent
+- Friend requests processed
+- Connection status changes
+- Error details
+
+## Support
+
+For issues related to UMC Bank services, contact: bank@umcapp.org
+
+## License
+
+MIT License - see LICENSE file for details.
