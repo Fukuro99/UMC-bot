@@ -54,31 +54,42 @@ class MVContactBot extends EventEmitter {
             "secretMachineId": this.data.currentMachineID
         };
 
-        const res = await fetch(`${baseAPIURL}/userSessions`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Content-Length": JSON.stringify(loginData).length,
-                    "UID": botUID,
-                    "TOTP": this.config.TOTP
-                },
-                body: JSON.stringify(loginData)
-            }
-        );
+        try {
+            const res = await fetch(`${baseAPIURL}/userSessions`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Content-Length": JSON.stringify(loginData).length,
+                        "UID": botUID,
+                        "TOTP": this.config.TOTP
+                    },
+                    body: JSON.stringify(loginData),
+                    signal: AbortSignal.timeout(30000)
+                }
+            );
         
-        if (res.status === 200){
-            const loginResponse = await res.json();
-            this.data.userId = loginResponse.entity.userId;
-            this.data.token = loginResponse.entity.token;
-            this.data.fullToken = `res ${loginResponse.entity.userId}:${loginResponse.entity.token}`;
-            this.data.tokenExpiry = loginResponse.entity.expire;
-            this.data.loggedIn = true;
-            await this.logger.log("INFO", `Successfully logged in as ${loginResponse.entity.userId}`);
-        }
-        else {
-            await this.logger.log("ERROR", `Unexpected return code ${res.status}: ${await res.text()}`);
-            throw new Error(`Unexpected return code ${res.status}: ${await res.text()}`);
+            if (res.status === 200){
+                const loginResponse = await res.json();
+                this.data.userId = loginResponse.entity.userId;
+                this.data.token = loginResponse.entity.token;
+                this.data.fullToken = `res ${loginResponse.entity.userId}:${loginResponse.entity.token}`;
+                this.data.tokenExpiry = loginResponse.entity.expire;
+                this.data.loggedIn = true;
+                await this.logger.log("INFO", `Successfully logged in as ${loginResponse.entity.userId}`);
+            }
+            else {
+                const errorBody = await res.text();
+                await this.logger.log("ERROR", `Unexpected return code ${res.status}: ${errorBody}`);
+                throw new Error(`Unexpected return code ${res.status}: ${errorBody}`);
+            }
+        } catch (error) {
+            if (error.name === 'TimeoutError' || error.code === 'ETIMEDOUT') {
+                throw new Error('Network timeout. Check your internet connection and try again.');
+            } else if (error.message.includes('fetch failed')) {
+                throw new Error('Network connection failed. Check your internet connection and firewall settings.');
+            }
+            throw error;
         }
     }
 
@@ -98,8 +109,9 @@ class MVContactBot extends EventEmitter {
             }
         );
         if (res.status !== 200){
-            await this.logger.log("ERROR", `Unexpected HTTP status when logging out (${res.status} ${res.statusText}): ${res.body}`);
-            throw new Error(`Unexpected HTTP status when logging out (${res.status} ${res.statusText}): ${res.body}`);
+            const errorBody = await res.text();
+            await this.logger.log("ERROR", `Unexpected HTTP status when logging out (${res.status} ${res.statusText}): ${errorBody}`);
+            throw new Error(`Unexpected HTTP status when logging out (${res.status} ${res.statusText}): ${errorBody}`);
         }
         
         this.data.loggedIn = false;
@@ -140,17 +152,29 @@ class MVContactBot extends EventEmitter {
     async runAutoFriendAccept() {
         let friendList = [];
         if (this.config.autoAcceptFriendRequests !== "none"){
-            const res = await fetch(`${baseAPIURL}/users/${this.data.userId}/contacts`,
-                {headers: {"Authorization": this.data.fullToken}}
-            );
-
-            await res.json().then(friends => {
-                friends.forEach(friend => {
-                    if (friend.friendStatus == "Requested"){
-                        friendList.push(friend);
+            try {
+                const res = await fetch(`${baseAPIURL}/users/${this.data.userId}/contacts`,
+                    {
+                        headers: {"Authorization": this.data.fullToken},
+                        signal: AbortSignal.timeout(10000) // 10 second timeout
                     }
-                });
-            });
+                );
+
+                if (res.ok) {
+                    await res.json().then(friends => {
+                        friends.forEach(friend => {
+                            if (friend.friendStatus == "Requested"){
+                                friendList.push(friend);
+                            }
+                        });
+                    });
+                } else {
+                    await this.logger.log("WARNING", `Failed to fetch contacts for auto friend accept: ${res.status} ${res.statusText}`);
+                }
+            } catch (error) {
+                await this.logger.log("WARNING", `Auto friend accept failed due to network error: ${error.message}`);
+                return; // Don't crash the bot, just skip this round
+            }
         }
 
         if (this.config.autoAcceptFriendRequests === "list"){
@@ -161,9 +185,9 @@ class MVContactBot extends EventEmitter {
             friend.friendStatus = "Accepted";
 
             await this.signalRConnection.send("UpdateContact", friend)
-            .catch((err) => {
-                this.logger.log("ERROR", `Error adding contact ${friend.id}: ${err}`);
-                throw new Error(err);
+            .catch(async (err) => {
+                await this.logger.log("ERROR", `Error adding contact ${friend.id}: ${err}`);
+                // Don't throw error to prevent bot crash
             });
             this.emit("addedContact", friend.id);
         });
@@ -201,22 +225,28 @@ class MVContactBot extends EventEmitter {
     async extendLogin() {
         if (this.config.autoExtendLogin){
             if ((Date.parse(this.data.tokenExpiry) - 600000) < Date.now()){
-                await this.logger.log("INFO", "Extending login");
-                const res = await fetch(`${baseAPIURL}/userSessions`,
-                    {
-                        method: "PATCH",
-                        headers: {
-                            "Authorization": this.data.fullToken
+                try {
+                    await this.logger.log("INFO", "Extending login");
+                    const res = await fetch(`${baseAPIURL}/userSessions`,
+                        {
+                            method: "PATCH",
+                            headers: {
+                                "Authorization": this.data.fullToken
+                            },
+                            signal: AbortSignal.timeout(10000) // 10 second timeout
                         }
+                    );
+                    
+                    if (res.ok){
+                        this.data.tokenExpiry = (new Date(Date.now() + 8.64e+7)).toISOString();
+                        await this.logger.log("INFO", "Successfully extended login session.");
                     }
-                );
-                
-                if (res.ok){
-                    this.data.tokenExpiry = (new Date(Date.now() + 8.64e+7)).toISOString();
-                    await this.logger.log("INFO", "Successfully extended login session.");
-                }
-                else{
-                    await this.logger.log("ERROR", `Couldn't extend login (${res.status} ${res.statusText}): ${await res.text()}`);
+                    else{
+                        const errorText = await res.text();
+                        await this.logger.log("ERROR", `Couldn't extend login (${res.status} ${res.statusText}): ${errorText}`);
+                    }
+                } catch (error) {
+                    await this.logger.log("WARNING", `Login extension failed due to network error: ${error.message}`);
                 }
             }
         }
@@ -230,15 +260,22 @@ class MVContactBot extends EventEmitter {
                     "Authorization": this.data.fullToken,
                     "UID": this.data.currentMachineID,
                     "SecretClientAccessKey": resoniteKey
-                }
+                },
+                timeout: 30000 // 30 second timeout
             })
-            .withAutomaticReconnect()
+            .withAutomaticReconnect([0, 2000, 10000, 30000])
             .configureLogging(signalR.LogLevel.Critical)
             .build();
     
-        await this.signalRConnection.start().catch(async (err) => {
-            await this.logger.log("ERROR", err);
-            throw new Error(err);
+        // Add connection timeout
+        const connectionPromise = this.signalRConnection.start();
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('SignalR connection timeout')), 30000);
+        });
+        
+        await Promise.race([connectionPromise, timeoutPromise]).catch(async (err) => {
+            await this.logger.log("ERROR", `SignalR connection failed: ${err.message || err}`);
+            throw new Error(`SignalR connection failed: ${err.message || err}`);
         });
     
         //Actions whenever a message is received
@@ -254,8 +291,8 @@ class MVContactBot extends EventEmitter {
                 }
 
                 await this.signalRConnection.send("MarkMessagesRead", readMessageData).catch(
-                    (reason) => {
-                        this.logger.log("ERROR", reason);
+                    async (reason) => {
+                        await this.logger.log("ERROR", `Failed to mark message as read: ${reason}`);
                     }
                 );
             }
@@ -281,6 +318,19 @@ class MVContactBot extends EventEmitter {
     
         this.signalRConnection.on("MessageSent", async (data) => {
             await this.logger.log("INFO", `Sent ${data.messageType} message to ${data.recipientId}: ${data.content}`);
+        });
+        
+        // Add connection state logging
+        this.signalRConnection.onreconnecting(() => {
+            this.logger.log("WARNING", "SignalR reconnecting...");
+        });
+        
+        this.signalRConnection.onreconnected(() => {
+            this.logger.log("INFO", "SignalR reconnected successfully");
+        });
+        
+        this.signalRConnection.onclose(() => {
+            this.logger.log("WARNING", "SignalR connection closed");
         });
     }
 
