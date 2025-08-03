@@ -100,72 +100,9 @@ async function startBot() {
         console.log('🎯 UMC-bot is now running and ready to serve!');
         console.log('💡 Press Ctrl+C to stop the bot gracefully');
         
-        // Test message to ginjake - improved with better error handling
-        setTimeout(async () => {
-            try {
-                console.log('📤 Testing message functionality...');
-                console.log(`📤 Bot User ID: ${bot.data.userId}`);
-                console.log(`📤 Bot Token: ${bot.data.fullToken ? 'Available' : 'Missing'}`);
-                console.log(`📤 SignalR Connection: ${bot.signalRConnection ? 'Connected' : 'Not connected'}`);
-                
-                // Test direct message to ginjake user ID (if we know it)
-                console.log('📤 Attempting to send test message to ginjake...');
-                
-                // Try sending to a known user ID format first
-                const testRecipient = 'U-ginjake'; // Standard Resonite user ID format
-                console.log(`📤 Trying to send message to: ${testRecipient}`);
-                
-                await bot.sendTextMessage(testRecipient, 'Hello from UMC-bot! This is a test message.');
-                console.log('✅ Test message sent successfully!');
-                
-            } catch (error) {
-                console.error('❌ Test message failed:', error.message);
-                console.log('📤 Falling back to contact list search...');
-                
-                try {
-                    // Fallback: Try to get contacts list
-                    console.log('📤 Attempting to fetch contacts list...');
-                    const res = await fetch(`https://api.resonite.com/users/${bot.data.userId}/contacts`, {
-                        headers: { 
-                            "Authorization": bot.data.fullToken,
-                            "Content-Type": "application/json"
-                        },
-                        timeout: 10000
-                    });
-                    
-                    console.log(`📤 Contacts API response status: ${res.status}`);
-                    
-                    if (res.ok) {
-                        const friends = await res.json();
-                        console.log(`📤 Found ${friends.length} contacts`);
-                        
-                        // List all contacts
-                        friends.forEach(friend => {
-                            console.log(`  - ${friend.contactUsername || 'Unknown'} (${friend.id}) [Status: ${friend.contactStatus}]`);
-                        });
-                        
-                        // Look for ginjake
-                        const ginjakeContact = friends.find(friend => 
-                            friend.contactUsername && friend.contactUsername.toLowerCase().includes('ginjake')
-                        );
-                        
-                        if (ginjakeContact) {
-                            console.log(`📤 Found ginjake contact: ${ginjakeContact.id} (${ginjakeContact.contactUsername})`);
-                            await bot.sendTextMessage(ginjakeContact.id, 'Hello ginjake! This is a test message from UMC-bot.');
-                            console.log('✅ Test message sent to ginjake successfully!');
-                        } else {
-                            console.log('❌ Could not find ginjake in contacts');
-                        }
-                    } else {
-                        const errorText = await res.text();
-                        console.error(`❌ Contacts API failed with status ${res.status}: ${errorText}`);
-                    }
-                } catch (contactError) {
-                    console.error('❌ Contacts list fallback also failed:', contactError.message);
-                    console.log('💡 Tip: Make sure you are friends with ginjake or try adding them as a friend first');
-                }
-            }
-        }, 15000); // Wait 15 seconds for SignalR to be fully ready // Wait 10 seconds after bot starts
+
+        
+
         
         // Keep the process alive
         setInterval(() => {
@@ -204,6 +141,7 @@ function setupEventHandlers(bot) {
         if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
             bot.sendTextMessage(senderId, 'Hello! I am the UMC Bank bot. How can I assist you today?');
         }
+    
     });
     
     bot.on('receiveSoundMessage', (senderId, soundUrl) => {
