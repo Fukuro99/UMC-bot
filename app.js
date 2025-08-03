@@ -100,6 +100,10 @@ async function startBot() {
         console.log('🎯 UMC-bot is now running and ready to serve!');
         console.log('💡 Press Ctrl+C to stop the bot gracefully');
         
+
+        
+
+        
         // Keep the process alive
         setInterval(() => {
             if (!isShuttingDown) {
@@ -137,6 +141,7 @@ function setupEventHandlers(bot) {
         if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
             bot.sendTextMessage(senderId, 'Hello! I am the UMC Bank bot. How can I assist you today?');
         }
+    
     });
     
     bot.on('receiveSoundMessage', (senderId, soundUrl) => {
