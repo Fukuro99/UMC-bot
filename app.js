@@ -59,10 +59,10 @@ process.on('unhandledRejection', (reason, promise) => {
 // Main application function
 async function startBot() {
     console.log('='.repeat(50));
-    console.log('🤖 UMC-bot Starting...');
-    console.log(`📊 Environment: ${config.environment}`);
-    console.log(`🔧 Version: ${config.versionName}`);
-    console.log(`👤 Username: ${config.username}`);
+    console.log('UMC-bot Starting...');
+    console.log(`Environment: ${config.environment}`);
+    console.log(`Version: ${config.versionName}`);
+    console.log(`Username: ${config.username}`);
     console.log('='.repeat(50));
     
     try {
@@ -81,28 +81,28 @@ async function startBot() {
         // Create bot instance
         bot = new MVContactBot(config);
         
+        // Set bot instance in health server for OTP and command functionality
+        healthServer.setBotInstance(bot);
+        
         // Set up event handlers
         setupEventHandlers(bot);
         
         // Login
-        console.log('🔐 Logging in...');
+        console.log('Logging in...');
         healthServer.setBotStatus('logging_in');
         await bot.login();
-        console.log('✅ Login successful');
+        console.log('Login successful');
         
         // Start bot
-        console.log('🚀 Starting bot...');
+        console.log('Starting bot...');
         healthServer.setBotStatus('starting');
         await bot.start();
-        console.log('✅ Bot started successfully');
+        console.log('Bot started successfully');
         healthServer.setBotStatus('running');
         
-        console.log('🎯 UMC-bot is now running and ready to serve!');
-        console.log('💡 Press Ctrl+C to stop the bot gracefully');
-        
-
-        
-
+        console.log('UMC-bot is now running and ready to serve!');
+        console.log('OTP endpoint is available at /otp');
+        console.log('Press Ctrl+C to stop the bot gracefully');
         
         // Keep the process alive
         setInterval(() => {
@@ -112,17 +112,17 @@ async function startBot() {
         }, 300000); // Log every 5 minutes
         
     } catch (error) {
-        console.error('❌ Failed to start bot:', error.message);
+        console.error('Failed to start bot:', error.message);
         
         if (healthServer) {
             healthServer.setBotStatus('error');
         }
         
         if (error.message.includes('Unexpected return code')) {
-            console.error('🚨 Login failed. Please check your credentials and TOTP token.');
+            console.error('Login failed. Please check your credentials and TOTP token.');
         }
         
-        console.error('🔄 Retrying in 30 seconds...');
+        console.error('Retrying in 30 seconds...');
         setTimeout(() => {
             if (!isShuttingDown) {
                 startBot();
@@ -135,7 +135,7 @@ async function startBot() {
 function setupEventHandlers(bot) {
     // Message events
     bot.on('receiveTextMessage', (senderId, message) => {
-        console.log(`📨 Text message from ${senderId}: ${message}`);
+        console.log(`Text message from ${senderId}: ${message}`);
         
         // Auto-respond to specific messages (you can customize this)
         if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
@@ -145,30 +145,30 @@ function setupEventHandlers(bot) {
     });
     
     bot.on('receiveSoundMessage', (senderId, soundUrl) => {
-        console.log(`🔊 Sound message from ${senderId}: ${soundUrl}`);
+        console.log(`Sound message from ${senderId}: ${soundUrl}`);
     });
     
     bot.on('receiveObjectMessage', (senderId, objectName, objectUrl) => {
-        console.log(`📦 Object message from ${senderId}: ${objectName} - ${objectUrl}`);
+        console.log(`Object message from ${senderId}: ${objectName} - ${objectUrl}`);
     });
     
     bot.on('receiveSessionInviteMessage', (senderId, sessionName, sessionId) => {
-        console.log(`🎮 Session invite from ${senderId}: ${sessionName} (${sessionId})`);
+        console.log(`Session invite from ${senderId}: ${sessionName} (${sessionId})`);
     });
     
     // Friend management events
     bot.on('addedContact', (friendId) => {
-        console.log(`👥 Added new friend: ${friendId}`);
+        console.log(`Added new friend: ${friendId}`);
     });
     
     // Error handling
     bot.on('error', (error) => {
-        console.error('🚨 Bot error:', error);
+        console.error('Bot error:', error);
     });
 }
 
 // Start the application
-console.log('🌟 Initializing UMC-bot...');
+console.log('Initializing UMC-bot...');
 startBot().catch(console.error);
 
 // Export for testing purposes
