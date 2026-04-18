@@ -313,6 +313,17 @@ class MVContactBot extends EventEmitter {
 
                 await this.logger.log("DEBUG", `API Response status: ${res.status}`);
 
+                if (res.status === 403) {
+                    await this.logger.log("WARNING", "Session token rejected (403). Attempting re-login...");
+                    try {
+                        await this.login();
+                        await this.logger.log("INFO", "Re-login successful. Will retry friend check on next interval.");
+                    } catch (reLoginError) {
+                        await this.logger.log("ERROR", `Re-login failed: ${reLoginError.message}`);
+                    }
+                    return;
+                }
+
                 if (res.ok) {
                     const friends = await res.json();
                     await this.logger.log("INFO", `✅ Found ${friends.length} total contacts`);
@@ -443,6 +454,11 @@ class MVContactBot extends EventEmitter {
                     if (res.ok){
                         this.data.tokenExpiry = (new Date(Date.now() + 8.64e+7)).toISOString();
                         await this.logger.log("INFO", "Successfully extended login session.");
+                    }
+                    else if (res.status === 403) {
+                        await this.logger.log("WARNING", "Session token rejected during extend (403). Re-logging in...");
+                        await this.login();
+                        await this.logger.log("INFO", "Re-login after token expiry successful.");
                     }
                     else{
                         const errorText = await res.text();
