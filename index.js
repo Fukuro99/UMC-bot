@@ -174,7 +174,9 @@ class MVContactBot extends EventEmitter {
             {
                 method: "DELETE",
                 headers: {
-                    "Authorization": this.data.fullToken
+                    "Authorization": this.data.fullToken,
+                    "UID": this.data.currentMachineID,
+                    "SecretClientAccessKey": resoniteKey
                 }
             }
         );
@@ -304,11 +306,12 @@ class MVContactBot extends EventEmitter {
                 
                 // Use the same fetch configuration as app.js (which works)
                 const res = await fetch(`${baseAPIURL}/users/${this.data.userId}/contacts`, {
-                    headers: { 
+                    headers: {
                         "Authorization": this.data.fullToken,
-                        "Content-Type": "application/json"
+                        "UID": this.data.currentMachineID,
+                        "SecretClientAccessKey": resoniteKey
                     },
-                    timeout: 10000
+                    signal: AbortSignal.timeout(10000)
                 });
 
                 await this.logger.log("DEBUG", `API Response status: ${res.status}`);
@@ -445,9 +448,11 @@ class MVContactBot extends EventEmitter {
                         {
                             method: "PATCH",
                             headers: {
-                                "Authorization": this.data.fullToken
+                                "Authorization": this.data.fullToken,
+                                "UID": this.data.currentMachineID,
+                                "SecretClientAccessKey": resoniteKey
                             },
-                            signal: AbortSignal.timeout(10000) // 10 second timeout
+                            signal: AbortSignal.timeout(10000)
                         }
                     );
                     
@@ -589,7 +594,9 @@ class MVContactBot extends EventEmitter {
         const res = await fetch(`${baseAPIURL}/users/${this.data.userId}/contacts`,
         {
             headers: {
-                "Authorization": this.data.fullToken
+                "Authorization": this.data.fullToken,
+                "UID": this.data.currentMachineID,
+                "SecretClientAccessKey": resoniteKey
             }
         });
         const resData = await res.json();

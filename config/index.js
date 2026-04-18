@@ -11,7 +11,7 @@ const config = {
     TOTP: process.env.RESONITE_TOTP || '',
     
     // Bot Behavior Settings
-    autoAcceptFriendRequests: process.env.AUTO_ACCEPT_FRIEND_REQUESTS === 'true' ? 'all' : 'none',
+    autoAcceptFriendRequests: process.env.AUTO_ACCEPT_FRIEND_REQUESTS === 'false' ? 'none' : 'all',
     autoExtendLogin: process.env.AUTO_EXTEND_LOGIN !== 'false',
     updateStatus: process.env.UPDATE_STATUS !== 'false',
     readMessagesOnReceive: process.env.READ_MESSAGES_ON_RECEIVE !== 'false',
@@ -37,7 +37,7 @@ const config = {
     TOTP: process.env.RESONITE_TOTP || '',
     
     // Bot Behavior Settings
-    autoAcceptFriendRequests: process.env.AUTO_ACCEPT_FRIEND_REQUESTS === 'true' ? 'all' : 'none',
+    autoAcceptFriendRequests: process.env.AUTO_ACCEPT_FRIEND_REQUESTS === 'false' ? 'none' : 'all',
     autoExtendLogin: process.env.AUTO_EXTEND_LOGIN !== 'false',
     updateStatus: process.env.UPDATE_STATUS !== 'false',
     readMessagesOnReceive: process.env.READ_MESSAGES_ON_RECEIVE !== 'false',
