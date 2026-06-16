@@ -16,6 +16,21 @@ class HealthServer {
     // Set bot instance reference for command execution
     setBotInstance(bot) {
         this.botInstance = bot;
+
+        // Map MVContactBot connection states onto our botStatus field so /health
+        // reflects whether SignalR is actually alive, not just process liveness.
+        const statusMap = {
+            connecting: 'starting',
+            connected: 'running',
+            reconnecting: 'reconnecting',
+            disconnected: 'disconnected'
+        };
+
+        bot.on('connectionStatusChanged', (newStatus) => {
+            const mapped = statusMap[newStatus] || newStatus;
+            this.setBotStatus(mapped);
+            console.log(`🏥 Bot connection status changed: ${newStatus} (botStatus=${mapped})`);
+        });
     }
     
     start() {
@@ -154,25 +169,38 @@ class HealthServer {
     
     // Handle health check requests
     async handleHealthCheck(req, res) {
+        const isOnline = this._safeIsOnline();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             status: 'ok',
             botStatus: this.botStatus,
+            isOnline: isOnline,
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),
             version: require('./package.json').version,
             environment: process.env.NODE_ENV || 'development'
         }));
     }
-    
+
     // Handle status check requests
     async handleStatusCheck(req, res) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             botStatus: this.botStatus,
-            isOnline: this.botInstance ? this.botInstance.isOnline() : false,
+            isOnline: this._safeIsOnline(),
             timestamp: new Date().toISOString()
         }));
+    }
+
+    _safeIsOnline() {
+        try {
+            return this.botInstance && typeof this.botInstance.isOnline === 'function'
+                ? this.botInstance.isOnline()
+                : false;
+        } catch (err) {
+            console.error('🏥 isOnline() threw:', err);
+            return false;
+        }
     }
     
     // Handle command requests
@@ -209,13 +237,15 @@ class HealthServer {
             console.log(`🔧 External command executed: ${body.command}`, body.parameters || {});
             
         } catch (error) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
+            const statusCode = error.code === 'NOT_FRIEND' ? 409 : 400;
+            res.writeHead(statusCode, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 success: false,
                 error: error.message,
+                code: error.code || null,
                 command: body.command
             }));
-            
+
             console.error(`🚨 Command execution failed: ${body.command}`, error);
         }
     }
@@ -255,12 +285,26 @@ class HealthServer {
         }
         
         switch (command.toLowerCase()) {
-            case 'send_message':
+            case 'send_message': {
                 if (!parameters.userId || !parameters.message) {
                     throw new Error('Missing required parameters: userId and message');
                 }
+                // Resoniteはフレンド以外にメッセージを送ってもHub側は成功を返してしまい
+                // 受信側に届かないので、送信前にフレンド状態を確認する
+                const isFriend = await this.botInstance.isFriendWith(parameters.userId);
+                if (!isFriend) {
+                    try {
+                        await this.botInstance.addFriend(parameters.userId);
+                    } catch (err) {
+                        console.error(`Failed to send friend request to ${parameters.userId}:`, err.message);
+                    }
+                    const error = new Error('Recipient is not a friend. A friend request has been sent.');
+                    error.code = 'NOT_FRIEND';
+                    throw error;
+                }
                 await this.botInstance.sendTextMessage(parameters.userId, parameters.message);
                 return { message: 'Message sent successfully' };
+            }
                 
             case 'get_status':
                 return {

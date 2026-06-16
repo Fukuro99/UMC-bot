@@ -36,11 +36,29 @@ class MVContactBot extends EventEmitter {
             "fullToken": "",
             "tokenExpiry": "",
             "loggedIn": false,
-            "whitelist": []
+            "whitelist": [],
+            "connectionStatus": "disconnected",
+            "stopRequested": false
         }
         this.autoRunners = {};
         this.signalRConnection = undefined;
+        this._reconnectTimer = undefined;
+        this._reconnectAttempts = 0;
         this.logger = new botLog(this.config.username, this.config.logToFile, this.config.logPath);
+    }
+
+    isOnline() {
+        if (!this.data.loggedIn) return false;
+        if (!this.signalRConnection) return false;
+        return this.signalRConnection.state === signalR.HubConnectionState.Connected;
+    }
+
+    setConnectionStatus(status) {
+        if (this.data.connectionStatus === status) return;
+        const prev = this.data.connectionStatus;
+        this.data.connectionStatus = status;
+        this.logger.log("INFO", `Connection status: ${prev} -> ${status}`);
+        this.emit("connectionStatusChanged", status, prev);
     }
 
     validateLoginCredentials() {
@@ -200,6 +218,7 @@ class MVContactBot extends EventEmitter {
         if (this.signalRConnection !== undefined){
             throw new Error("This bot has already been started!");
         }
+        this.data.stopRequested = false;
         
         // Test network connectivity before starting SignalR
         await this.testNetworkConnectivity();
@@ -285,14 +304,81 @@ class MVContactBot extends EventEmitter {
     }
 
     async stop(){
+        this.data.stopRequested = true;
+        if (this._reconnectTimer){
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = undefined;
+        }
         if (this.signalRConnection === undefined){
             throw new Error("This bot hasn't been started yet, so cannot stop.");
         }
-        await this.signalRConnection.stop();
+        try {
+            await this.signalRConnection.stop();
+        } catch (err) {
+            await this.logger.log("WARNING", `Error while stopping SignalR: ${err.message}`);
+        }
         clearInterval(this.autoRunners.autoAcceptFriendRequests);
         clearInterval(this.autoRunners.updateStatus);
         clearInterval(this.autoRunners.extendLogin);
         this.signalRConnection = undefined;
+        this.setConnectionStatus("disconnected");
+    }
+
+    _scheduleReconnect() {
+        if (this.data.stopRequested) return;
+        if (this._reconnectTimer) return;
+
+        this._reconnectAttempts += 1;
+        // Exponential backoff capped at 5 minutes
+        const delayMs = Math.min(5000 * Math.pow(2, this._reconnectAttempts - 1), 300000);
+
+        this.logger.log("WARNING",
+            `Scheduling manual SignalR reconnect in ${Math.round(delayMs / 1000)}s ` +
+            `(attempt #${this._reconnectAttempts})`);
+
+        this._reconnectTimer = setTimeout(async () => {
+            this._reconnectTimer = undefined;
+            try {
+                await this._performReconnect();
+            } catch (err) {
+                await this.logger.log("ERROR", `Manual reconnect failed: ${err.message}`);
+                this._scheduleReconnect();
+            }
+        }, delayMs);
+    }
+
+    async _performReconnect() {
+        if (this.data.stopRequested) return;
+
+        await this.logger.log("INFO",
+            `Performing manual reconnect (attempt #${this._reconnectAttempts})...`);
+
+        // Tear down old SignalR connection if any
+        if (this.signalRConnection) {
+            try {
+                await this.signalRConnection.stop();
+            } catch (err) {
+                await this.logger.log("DEBUG", `Old SignalR stop error (ignored): ${err.message}`);
+            }
+            this.signalRConnection = undefined;
+        }
+
+        // Re-login if token is missing, near expiry, or session was rejected
+        const expiryMs = Date.parse(this.data.tokenExpiry);
+        const tokenInvalid =
+            !this.data.loggedIn ||
+            !this.data.fullToken ||
+            isNaN(expiryMs) ||
+            expiryMs - 60000 < Date.now();
+
+        if (tokenInvalid) {
+            await this.logger.log("INFO", "Token missing or near expiry; re-logging in before reconnect");
+            this.data.loggedIn = false;
+            await this.login();
+        }
+
+        await this.startSignalR();
+        await this.logger.log("INFO", "Manual reconnect successful");
     }
 
     async runAutoFriendAccept() {
@@ -496,10 +582,12 @@ class MVContactBot extends EventEmitter {
                 .build();
         
             await this.logger.log("INFO", "Starting SignalR connection...");
+            this.setConnectionStatus("connecting");
             
             // Add more detailed error handling for connection
             await this.signalRConnection.start().catch(async (err) => {
                 await this.logger.log("ERROR", `SignalR start failed: ${err.message}`);
+                this.setConnectionStatus("disconnected");
                 
                 // Try to diagnose the issue
                 if (err.message.includes('fetch failed')) {
@@ -512,6 +600,8 @@ class MVContactBot extends EventEmitter {
             });
             
             await this.logger.log("INFO", "SignalR connection established successfully");
+            this.setConnectionStatus("connected");
+            this._reconnectAttempts = 0;
         
             // Add missing session update handler to prevent warnings
             this.signalRConnection.on("ReceiveSessionUpdate", async (sessionData) => {
@@ -574,14 +664,22 @@ class MVContactBot extends EventEmitter {
             // Add connection state logging
             this.signalRConnection.onreconnecting(() => {
                 this.logger.log("WARNING", "SignalR reconnecting...");
+                this.setConnectionStatus("reconnecting");
             });
             
             this.signalRConnection.onreconnected(() => {
                 this.logger.log("INFO", "SignalR reconnected successfully");
+                this.setConnectionStatus("connected");
+                this._reconnectAttempts = 0;
             });
             
             this.signalRConnection.onclose((error) => {
-                this.logger.log("WARNING", `SignalR connection closed: ${error || 'No error specified'}`);
+                const errMsg = error?.message || error || 'No error specified';
+                this.logger.log("WARNING", `SignalR connection closed: ${errMsg}`);
+                this.setConnectionStatus("disconnected");
+                if (!this.data.stopRequested) {
+                    this._scheduleReconnect();
+                }
             });
             
         } catch (error) {
@@ -613,6 +711,29 @@ class MVContactBot extends EventEmitter {
             this.logger.log("ERROR", `Unexpected error when trying to remove ${friendId}: ${res.status} ${res.statusText}${res.bodyUsed ? ': ' + res.body : '.'}`);
             throw new Error(`Unexpected error when trying to remove ${friendId}: ${res.status} ${res.statusText}${res.bodyUsed ? ': ' + res.body : '.'}`);
         }
+    }
+
+    /**
+     * 指定ユーザーがBotとフレンド(Accepted)状態か確認する
+     * @param {string} userId 対象のResoniteユーザーID
+     * @returns {Promise<boolean>} Acceptedなら true
+     */
+    async isFriendWith(userId){
+        const res = await fetch(`${baseAPIURL}/users/${this.data.userId}/contacts`, {
+            headers: {
+                "Authorization": this.data.fullToken,
+                "UID": this.data.currentMachineID,
+                "SecretClientAccessKey": resoniteKey
+            },
+            signal: AbortSignal.timeout(10000)
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            throw new Error(`Failed to fetch contacts (${res.status} ${res.statusText}): ${body}`);
+        }
+        const contacts = await res.json();
+        const contact = contacts.find(c => c.id === userId);
+        return contact?.contactStatus === "Accepted";
     }
 
     async addFriend(friendId){
