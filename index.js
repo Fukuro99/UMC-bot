@@ -44,6 +44,7 @@ class MVContactBot extends EventEmitter {
         this.signalRConnection = undefined;
         this._reconnectTimer = undefined;
         this._reconnectAttempts = 0;
+        this._reconnectInProgress = false;
         this.logger = new botLog(this.config.username, this.config.logToFile, this.config.logPath);
     }
 
@@ -347,38 +348,49 @@ class MVContactBot extends EventEmitter {
         }, delayMs);
     }
 
-    async _performReconnect() {
+    async _performReconnect(forceRelogin = false) {
         if (this.data.stopRequested) return;
+        if (this._reconnectInProgress) {
+            await this.logger.log("DEBUG", "Reconnect already in progress; skipping duplicate call");
+            return;
+        }
+        this._reconnectInProgress = true;
+        try {
+            await this.logger.log("INFO",
+                `Performing manual reconnect (attempt #${this._reconnectAttempts}, forceRelogin=${forceRelogin})...`);
 
-        await this.logger.log("INFO",
-            `Performing manual reconnect (attempt #${this._reconnectAttempts})...`);
-
-        // Tear down old SignalR connection if any
-        if (this.signalRConnection) {
-            try {
-                await this.signalRConnection.stop();
-            } catch (err) {
-                await this.logger.log("DEBUG", `Old SignalR stop error (ignored): ${err.message}`);
+            // Tear down old SignalR connection if any
+            if (this.signalRConnection) {
+                try {
+                    await this.signalRConnection.stop();
+                } catch (err) {
+                    await this.logger.log("DEBUG", `Old SignalR stop error (ignored): ${err.message}`);
+                }
+                this.signalRConnection = undefined;
             }
-            this.signalRConnection = undefined;
+
+            // Re-login if forced (server rejected the session), or token is missing/near expiry
+            const expiryMs = Date.parse(this.data.tokenExpiry);
+            const tokenInvalid =
+                forceRelogin ||
+                !this.data.loggedIn ||
+                !this.data.fullToken ||
+                isNaN(expiryMs) ||
+                expiryMs - 60000 < Date.now();
+
+            if (tokenInvalid) {
+                await this.logger.log("INFO", forceRelogin
+                    ? "Server rejected the session; re-logging in before reconnect"
+                    : "Token missing or near expiry; re-logging in before reconnect");
+                this.data.loggedIn = false;
+                await this.login();
+            }
+
+            await this.startSignalR();
+            await this.logger.log("INFO", "Manual reconnect successful");
+        } finally {
+            this._reconnectInProgress = false;
         }
-
-        // Re-login if token is missing, near expiry, or session was rejected
-        const expiryMs = Date.parse(this.data.tokenExpiry);
-        const tokenInvalid =
-            !this.data.loggedIn ||
-            !this.data.fullToken ||
-            isNaN(expiryMs) ||
-            expiryMs - 60000 < Date.now();
-
-        if (tokenInvalid) {
-            await this.logger.log("INFO", "Token missing or near expiry; re-logging in before reconnect");
-            this.data.loggedIn = false;
-            await this.login();
-        }
-
-        await this.startSignalR();
-        await this.logger.log("INFO", "Manual reconnect successful");
     }
 
     async runAutoFriendAccept() {
@@ -403,12 +415,12 @@ class MVContactBot extends EventEmitter {
                 await this.logger.log("DEBUG", `API Response status: ${res.status}`);
 
                 if (res.status === 403) {
-                    await this.logger.log("WARNING", "Session token rejected (403). Attempting re-login...");
+                    await this.logger.log("WARNING", "Session token rejected (403). Forcing reconnect (re-login + SignalR restart)...");
                     try {
-                        await this.login();
-                        await this.logger.log("INFO", "Re-login successful. Will retry friend check on next interval.");
-                    } catch (reLoginError) {
-                        await this.logger.log("ERROR", `Re-login failed: ${reLoginError.message}`);
+                        await this._performReconnect(true);
+                        await this.logger.log("INFO", "Reconnect successful. Will retry friend check on next interval.");
+                    } catch (reconnectError) {
+                        await this.logger.log("ERROR", `Reconnect after 403 failed: ${reconnectError.message}`);
                     }
                     return;
                 }
@@ -547,9 +559,9 @@ class MVContactBot extends EventEmitter {
                         await this.logger.log("INFO", "Successfully extended login session.");
                     }
                     else if (res.status === 403) {
-                        await this.logger.log("WARNING", "Session token rejected during extend (403). Re-logging in...");
-                        await this.login();
-                        await this.logger.log("INFO", "Re-login after token expiry successful.");
+                        await this.logger.log("WARNING", "Session token rejected during extend (403). Forcing reconnect...");
+                        await this._performReconnect(true);
+                        await this.logger.log("INFO", "Reconnect after token expiry successful.");
                     }
                     else{
                         const errorText = await res.text();
