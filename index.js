@@ -726,9 +726,13 @@ class MVContactBot extends EventEmitter {
     }
 
     /**
-     * 指定ユーザーがBotとフレンド(Accepted)状態か確認する
+     * 指定ユーザーがBotと相互フレンド状態か確認する
+     * Resoniteの Contact.CanBeInteractedWith と同等の判定を行う。
+     * contactStatus は自分側の状態しか表さないため、addFriend 送信直後は
+     * 相手未承認でも "Accepted" になり得る。isAccepted は双方向で受諾されて
+     * 初めて true になるので、こちらを一次判定に使う。
      * @param {string} userId 対象のResoniteユーザーID
-     * @returns {Promise<boolean>} Acceptedなら true
+     * @returns {Promise<boolean>} 相互フレンドなら true
      */
     async isFriendWith(userId){
         const res = await fetch(`${baseAPIURL}/users/${this.data.userId}/contacts`, {
@@ -745,7 +749,11 @@ class MVContactBot extends EventEmitter {
         }
         const contacts = await res.json();
         const contact = contacts.find(c => c.id === userId);
-        return contact?.contactStatus === "Accepted";
+        if (!contact) return false;
+        if (contact.isAccepted !== true) return false;
+        const isPartiallyMigrated = contact.isMigrated === true && contact.isCounterpartMigrated !== true;
+        if (isPartiallyMigrated) return false;
+        return true;
     }
 
     async addFriend(friendId){
