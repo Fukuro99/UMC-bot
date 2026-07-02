@@ -246,7 +246,13 @@ class HealthServer {
                 command: body.command
             }));
 
-            console.error(`🚨 Command execution failed: ${body.command}`, error);
+            // NOT_FRIEND は設計通りの経路 (未フレンド検知→フレンド申請送信) なので
+            // 障害とは区別して INFO レベルでログする
+            if (error.code === 'NOT_FRIEND') {
+                console.log(`ℹ️ ${body.command}: ${error.message}`);
+            } else {
+                console.error(`🚨 Command execution failed: ${body.command}`, error);
+            }
         }
     }
     
