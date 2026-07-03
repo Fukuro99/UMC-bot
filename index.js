@@ -756,6 +756,36 @@ class MVContactBot extends EventEmitter {
         return true;
     }
 
+    /**
+     * 相互フレンドのユーザー一覧を返す
+     * isFriendWith と同じ Contact.CanBeInteractedWith 相当のフィルタを適用する
+     * @returns {Promise<Array<{id: string, contactUsername: string}>>}
+     */
+    async getFriends(){
+        const res = await fetch(`${baseAPIURL}/users/${this.data.userId}/contacts`, {
+            headers: {
+                "Authorization": this.data.fullToken,
+                "UID": this.data.currentMachineID,
+                "SecretClientAccessKey": resoniteKey
+            },
+            signal: AbortSignal.timeout(10000)
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            throw new Error(`Failed to fetch contacts (${res.status} ${res.statusText}): ${body}`);
+        }
+        const contacts = await res.json();
+        return contacts
+            .filter(c => {
+                if (c.id === this.data.userId) return false;
+                if (c.isAccepted !== true) return false;
+                const isPartiallyMigrated = c.isMigrated === true && c.isCounterpartMigrated !== true;
+                if (isPartiallyMigrated) return false;
+                return true;
+            })
+            .map(c => ({ id: c.id, contactUsername: c.contactUsername }));
+    }
+
     async addFriend(friendId){
         const res = await fetch(`${baseAPIURL}/users/${friendId}`);
         const resData = await res.json();

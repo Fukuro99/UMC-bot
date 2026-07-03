@@ -312,6 +312,43 @@ class HealthServer {
                 return { message: 'Message sent successfully' };
             }
                 
+            case 'broadcast_message': {
+                if (!parameters.message) {
+                    throw new Error('Missing required parameter: message');
+                }
+                const friends = await this.botInstance.getFriends();
+                if (this.botInstance.logger) {
+                    await this.botInstance.logger.log("INFO", `📢 Broadcast start: ${friends.length} target(s)`);
+                }
+                const failures = [];
+                let sentCount = 0;
+                for (let i = 0; i < friends.length; i++) {
+                    const friend = friends[i];
+                    try {
+                        await this.botInstance.sendTextMessage(friend.id, parameters.message);
+                        sentCount++;
+                    } catch (err) {
+                        failures.push({ userId: friend.id, error: err.message });
+                        if (this.botInstance.logger) {
+                            await this.botInstance.logger.log("WARNING", `📢❌ Broadcast failed for ${friend.contactUsername || friend.id}: ${err.message}`);
+                        }
+                    }
+                    // Hub 側の負荷とレート制限を考えて 200ms 間隔で送る (最後の 1 件後はスリープしない)
+                    if (i < friends.length - 1) {
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                }
+                if (this.botInstance.logger) {
+                    await this.botInstance.logger.log("INFO", `📢 Broadcast complete: ${sentCount}/${friends.length} sent, ${failures.length} failed`);
+                }
+                return {
+                    totalTargets: friends.length,
+                    sentCount,
+                    failedCount: failures.length,
+                    failures
+                };
+            }
+
             case 'get_status':
                 return {
                     botStatus: this.botStatus,
